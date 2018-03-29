@@ -15,9 +15,9 @@ sudo apt-get update
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $MYSQL_PASSWORD"
 sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $MYSQL_PASSWORD"
 
-sudo apt-get -y install mysql-server
-sudo apt-get install -y git python-setuptools python-dev libavcodec-dev libavformat-dev libswscale-dev libjpeg62 libjpeg62-dev libfreetype6 libfreetype6-dev apache2 libapache2-mod-wsgi mysql-server mysql-client libmysqlclient-dev gfortran
-sudo apt-get install -y libav-tools
+sudo apt-get -y install mysql-server --allow-unauthenticated
+sudo apt-get install -y git python-setuptools python-dev libavcodec-dev libavformat-dev libswscale-dev libjpeg62 libjpeg62-dev libfreetype6 libfreetype6-dev apache2 libapache2-mod-wsgi mysql-server mysql-client libmysqlclient-dev gfortran --allow-unauthenticated
+sudo apt-get install -y libav-tools --allow-unauthenticated
 
 sudo easy_install -U SQLAlchemy pillow wsgilog mysql-python munkres parsedatetime argparse
 sudo easy_install -U numpy
@@ -43,18 +43,20 @@ if [[ "$INSTALL_WITH_EXAMPLE_DATA" = "true" ]]; then
     sudo cp /etc/apache2/mods-available/headers.load /etc/apache2/mods-enabled
     mysql -u root -p$MYSQL_PASSWORD -e 'create database vatic;'
 
-    sudo bash -c "cat > /etc/apache2/sites-enabled/000-default" <<EOF
-    WSGIDaemonProcess www-data
+    sudo bash -c "cat > /etc/apache2/sites-enabled/000-default.conf" <<EOF
+    WSGIDaemonProcess www-data python-eggs=$PWD/vatic/egg_cache
     WSGIProcessGroup www-data
 
     <VirtualHost *:80>
         ServerName $SERVER_NAME
-        DocumentRoot /home/vagrant/vatic/public
-
-        WSGIScriptAlias /server /home/vagrant/vatic/server.py
+        DocumentRoot $PWD/vatic/public
+        WSGIScriptAlias /server $PWD/vatic/server.py
+        ErrorLog /var/log/apache2/error-vatic.log
         CustomLog /var/log/apache2/access.log combined
     </VirtualHost>
-
+    <Directory />
+        Require all granted
+    </Directory>
 EOF
 
     sudo cp vatic/config.py-example vatic/config.py
@@ -62,20 +64,23 @@ EOF
 
     sudo apache2ctl graceful
 
+    mkdir $PWD/vatic/egg_cache
+    sudo chown -R www-data: $PWD/vatic/egg_cache
+
     cd vatic
     turkic setup --database
     turkic setup --public-symlink
     turkic status --verify
 
     # setup demo dataset
-    mkdir -p /home/vagrant/vagrant_data/example
-    wget http://techslides.com/demos/sample-videos/small.mp4 -O /home/vagrant/vagrant_data/small.mp4
-    turkic extract /home/vagrant/vagrant_data/small.mp4 /home/vagrant/vagrant_data/example/
-    turkic load example_id /home/vagrant/vagrant_data/example/ example_label1 example_label2 example_label3 --offline
+    mkdir -p $PWD/vatic_data/example
+    wget http://techslides.com/demos/sample-videos/small.mp4 -O $PWD/vatic_data/small.mp4
+    turkic extract $PWD/vatic_data/small.mp4 $PWD/vatic_data/example/
+    turkic load example_id $PWD/vatic_data/example/ example_label1 example_label2 example_label3 --offline
 
     wget -qO- "http://localhost:80/?id=1&hitId=offline" > /dev/null \
-        && echo "We are rather done. Go to http://localhost:8080/?id=1&hitId=offline and see how this thing works" \
-        || echo "Something went rather wrong and now you'll have to troubleshoot"
+        && echo "We are done. Go to http://localhost:80/?id=1&hitId=offline and see how this thing works" \
+        || echo "Something went wrong and now you'll have to troubleshoot"
 else
     echo "*****************************************************"
     echo "*** Please consult README to finish installation. ***"
